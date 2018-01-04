@@ -1,0 +1,354 @@
+# _*_coding:utf-8_*_
+# 网站反爬虫：一个IP频繁访问就先将该IP加入黑名单
+# 反爬虫策略：限制IP访问频率，超过频率就自动断开：降低爬虫的速度，在每个请求前加time.sleep,或更换IP
+# 策略二：后台对访问进行统计，如果单个userAgent访问超过阈值，予以封锁：误伤较大，一般网站不使用
+# 策略三：针对cookies：一般网站不使用
+import requests
+from bs4 import BeautifulSoup
+import re
+from xpinyin import Pinyin
+import pymysql
+import codecs
+# 设置延时时间防止取速度过快
+import time
+
+def getCurrentTime():
+    return time.strftime('[%Y-%m-%d %H:%M:%S]', time.localtime(time.time()))
+
+def getURL(url, tries_num=50, sleep_time=0, time_out=10):
+    headers = {'content-type': 'text/html;charset=UTF-8',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36'}
+    proxies = {"http": "120.32.208.16:8118"}
+    sleep_time_p = sleep_time
+    time_out_p = time_out
+    tries_num_p = tries_num
+    try:
+        res = requests.Session()
+        if isproxy == 1:
+            res = requests.get(url, headers=headers, timeout=time_out)
+        else:
+            res = requests.get(url, headers=headers, timeout=time_out, proxies=proxies)
+        res.raise_for_status()  # 如果响应状态码不是 200，就主动抛出异常
+    except requests.RequestException as e:
+        sleep_time_p = sleep_time_p + 10
+        time_out_p = time_out_p + 10
+        tries_num_p = tries_num_p - 1
+        # 设置重试次数，最大timeout 时间和 最长休眠时间
+        # print tries_num_p
+        if tries_num_p > 0:
+            time.sleep(sleep_time_p)
+            print(getCurrentTime(), url, 'URL Connection Error: 第', max_retry - tries_num_p, u'次 Retry Connection', e)
+            res = getURL(url, tries_num_p, sleep_time_p, time_out_p)
+            if res.status_code == 200:
+                print(getCurrentTime(), url, 'URL Connection Success: 共尝试', max_retry - tries_num_p, u'次', ',sleep_time:', sleep_time_p, ',time_out:', time_out_p)
+            else:
+                print(getCurrentTime(), url, 'URL Connection Error: 共尝试', max_retry - tries_num_p, u'次', ',sleep_time:', sleep_time_p, ',time_out:', time_out_p)
+                pass
+    return res
+
+def get_City():
+    herf_list = []
+    url = "http://www.lianjia.com"
+    try:
+        html = getURL(url).content
+        soup = BeautifulSoup(html, 'html.parser')
+        City_wappers = soup.select('div.header')[0].select('.city')
+        for City_wapper in City_wappers:
+            Citys = City_wapper.select('a')
+            for City in Citys:
+                href = City.get('href')
+                if href != 'http://sh.lianjia.com' and href != 'http://su.lianjia.com':
+                    pattern = re.compile('http://(\w+).lianjia.com(?!\S)')
+                    match = pattern.match(href)
+                    if match:
+                        goup = match.group()
+                        herf_list.append(goup)
+        return herf_list
+    except:
+        pass
+
+def get_City_you():
+    herf_list = []
+    url = "http://www.lianjia.com"
+    try:
+        html = getURL(url).content
+        soup = BeautifulSoup(html, 'html.parser')
+        City_wappers = soup.select('div.header')[0].select('.city')
+        for City_wapper in City_wappers:
+            Citys = City_wapper.select('a')
+            for City in Citys:
+                href = City.get('href')
+                if href != 'http://sh.lianjia.com':
+                    pattern = re.compile('http://you.lianjia.com/(\w+)')
+                    match = pattern.match(href)
+                    if match:
+                        goup = match.group()
+                        herf_list.append(goup)
+        return herf_list
+    except:
+        pass
+
+def get_City_s():
+    herf_list = []
+    url = "http://www.lianjia.com"
+    try:
+        html = getURL(url).content
+        soup = BeautifulSoup(html, 'html.parser')
+        City_wappers = soup.select('div.header')[0].select('.city')
+        for City_wapper in City_wappers:
+            Citys = City_wapper.select('a')
+            for City in Citys:
+                href = City.get('href')
+                if href == 'http://sh.lianjia.com'or href == 'http://su.lianjia.com':
+                    herf_list.append(href)
+        return herf_list
+    except:
+        pass
+
+def get_reion(url):
+    list = []
+    try:
+        try:
+            html = requests.get(url + '/ershoufang').text
+            soup = BeautifulSoup(html, 'html.parser')
+            reions = soup.select('div.position')[0].select('div')[0].select('a')
+        except:
+            pass
+        for reion in reions:
+            href = reion.get('href')
+            pattern1 = re.compile('/ershoufang/(\w+)')
+            match1 = pattern1.match(href)
+            if match1:
+                goup = match1.group()
+                list.append(url + goup)
+            pattern = re.compile('https://(\w+).lianjia.com/ershoufang/(\w+)')
+            match = pattern.match(href)
+            if match:
+                goup = match.group()
+                list.append(goup)
+        return list
+    except:
+        pass
+
+def get_s_reion(url):
+    try:
+        list = []
+        html = requests.get(url+ '/ershoufang').text
+        soup = BeautifulSoup(html, 'html.parser')
+        reions = soup.select('div.filter-inner')[0].select('div.level1')[0].select('a')[1:]
+        for reion in reions:
+            city = reion.get('gahref')
+            city_href = url +  '/'+'ershoufang'+ '/' + city+ '/'
+            list.append(city_href)
+        return list
+    except:
+        pass
+
+def get_url_s(url,html_city):
+    try:
+        gethtml = []
+        get1 = []
+        html = requests.get(html_city)
+        respons = html.content
+        soup = BeautifulSoup(respons, 'html.parser')
+        d = soup.select('div.location-child')[0]
+        d1 = d.select('div.level2-item')
+        for d2 in d1:
+            diqu = d2.find('a')
+            href = diqu.get('href')
+            get1.append(str(href))
+        for i in range(1, len(get1)):
+            html = url + get1[i]
+            gethtml.append(html)
+        return gethtml
+    except:
+        pass
+
+def Get_url(url):
+    list = []
+    html = getURL(url)
+    # 获取源码内容比request.text好，对编码方式优化好
+    respons = html.content
+    # 使用bs4模块，对响应的链接源代码进行html解析，后面是python内嵌的解释器，也可以安装使用lxml解析器
+    soup = BeautifulSoup(respons, 'html.parser')
+    try:
+        page = soup.select('div.page-box')[1].get('page-data')
+        pattern = re.compile(r'.*?totalPage":(.*?),"curPage":1')
+        match = pattern.match(page)
+        goup = int(match.group(1))
+        try:
+            for i in range(1, goup+1):
+                list.append('%s/pg%d' % (url, i))
+            return list
+        except:
+            pass
+    except:
+        pass
+
+def Get_url_s(url):
+    list = []
+    html = getURL(url)
+    respons = html.content
+    try:
+        try:
+            soup = BeautifulSoup(respons, 'html.parser')
+            page = soup.select('div.c-pagination')[0]
+        except:
+            pass
+        if len(page.select('a')) > 1:
+            alist = int(page.select('a')[-2].text)
+        else:
+            alist = int(page.select('span')[0].text)
+        for i in range(1, alist + 1):
+            list.append('%s/d%s' % (url, i))
+        return list
+    except:
+        pass
+
+def Get_Data(url):
+    html = getURL(url).content
+    soup = BeautifulSoup(html, 'html.parser')
+    try:
+        city = soup.select('div.crumbs')[0].select('a')[1].text
+        reion = soup.select('div.crumbs')[0].select('a')[2].text
+        try:
+            infos = soup.select('li.clear')
+        except:
+            pass
+        for info in infos:
+            data = []
+            # 城市
+            data.append(city)
+            # 地区
+            data.append(reion)
+            #标题
+            title = info.select('.title')[0].find('a').text
+            data.append(title)
+            #小区
+            name = info.select('.houseInfo')[0].find('a').text
+            data.append(name)
+            fangL = info.select('div.houseInfo')[0].contents[-1].strip().split('|')
+            #户型
+            room_type = fangL[1]
+            data.append(room_type)
+            #面积
+            size = fangL[2].strip()
+            data.append(size)
+            #总价
+            price = info.select('div.totalPrice')[0].text
+            data.append(price)
+            #每平方米售价
+            price_pat = info.select('div.unitPrice')[0].text
+            data.append(price_pat)
+            print(data)
+            try:
+                # 获取一个数据库连接，注意如果是UTF-8类型的，需要制定数据库
+                conn = pymysql.connect(host='localhost', user='root', passwd='root', db='city_lianjia_data', port=3306,
+                                       charset='utf8')
+                cur = conn.cursor()
+                cur.execute("insert into lianjia VALUES ('%s','%s','%s','%s','%s','%s','%s','%s')" % (
+                    city,reion,title,name,room_type,size,price,price_pat))
+                conn.commit()  # 将数据写入数据库
+                cur.close()  # 关闭游标
+                conn.close()  # 释放数据库资源
+            except Exception:
+                print("发生异常")
+    except:
+        pass
+
+def Get_s_Data(url):
+    html = getURL(url).content
+    soup = BeautifulSoup(html, 'html.parser')
+    try:
+        city = soup.select('div.wrapper')[0].find('span', class_='js_tabItem hover').text
+        try:
+            infos = soup.select('ul.js_fang_list')[0].select('li')
+        except:
+            pass
+        for info in infos:
+            data = []
+            # 城市
+            data.append(city)
+            # 地区
+            d1 = info.find('span', class_='info-col row2-text').text.split('|')
+            reion = d1[1].strip()+'二手房'
+            data.append(reion)
+            #标题
+            des = info.find('a', class_="text link-hover-green js_triggerGray js_fanglist_title").text
+            data.append(des)
+            #小区名称
+            dd = info.find('div', class_='info-table')
+            nameInfo = dd.find('a', class_='laisuzhou')
+            name = nameInfo.text
+            data.append(name)
+            #户型
+            fangL = dd.find('span').contents[-1].strip().split('|')  #split按照指定的字符进行切片
+            room_type = fangL[0].strip()                             #strip移除字符串头尾指定的字符，默认为空格
+            data.append(room_type)
+            #面积
+            size = fangL[1].strip()
+            data.append(size)
+            #总价
+            price = info.find('span', class_='total-price strong-num').text.strip() + u'万'
+            data.append(price)
+            #每平方米售价
+            jun = info.find('span', class_='info-col price-item minor').text
+            price_union = jun.strip()
+            data.append(price_union)
+            print(data)
+            try:
+                # 获取一个数据库连接，注意如果是UTF-8类型的，需要制定数据库
+                conn = pymysql.connect(host='localhost', user='root', passwd='root', db='city_lianjia_data', port=3306,
+                                       charset='utf8')
+                cur = conn.cursor()
+                cur.execute("insert into lianjia VALUES ('%s','%s','%s','%s','%s','%s','%s','%s')" % (
+                    city,reion,des,name,room_type,size,price,price_union))
+                conn.commit()  # 将数据写入数据库
+                cur.close()  # 关闭游标
+                conn.close()  # 释放数据库资源
+            except Exception:
+                print("发生异常")
+    except:
+        pass
+
+def creal_mysql():
+    conn = pymysql.connect(host='localhost', user='root', passwd='root', db='city_lianjia_data', port=3306, charset='utf8')
+    cur = conn.cursor()
+    cur.execute("""
+        create table if not EXISTS lianjia(
+        City varchar(100) null,
+        Area varchar(100) null,
+        Title varchar(100) null,
+        Community_name varchar(100) null,
+        House_type varchar(100) null,
+        Square varchar(100) null,
+        Total_price varchar(100) null,
+        average_prince varchar(100) null
+        )
+    """)
+
+if __name__ == '__main__':
+    creal_mysql()
+    global sleep_time, isproxy, max_retry
+    isproxy = 1
+    sleep_time = 0.1
+    max_retry = 50
+    for url in get_City_s():
+        lists = get_s_reion(url)
+        if lists != None:
+            for list in lists:
+                htmls = get_url_s(url, list)
+                if htmls != None:
+                    for html in htmls:
+                        Citys = Get_url_s(html)
+                        if Citys  != None:
+                            for City in Citys :
+                                Get_s_Data(City)
+    for url in get_City():
+        lists = get_reion(url)
+        if lists != None:
+            for list in lists:
+                htmls = Get_url(list)
+                if htmls != None:
+                    for html in htmls:
+                        Get_Data(html)
